@@ -1,37 +1,52 @@
-#include <stdio.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include "commonutils.h"
+
+void receivePrintIncomingData(int socketFD) {
+    char buffer[1024];
+
+    while(1) {
+        ssize_t amountReceived = recv(socketFD, buffer, 1024, 0);
+
+        if (amountReceived > 0) {
+            buffer[amountReceived] = '\0';
+            printf("Received: %s", buffer);
+        } else break;
+    }
+}
 
 int main() {
-    char *ip = "172.217.164.110";
-
-    /* SocketFD - socket file descriptor
-     * - a socket is basically a file in your computer
-     * - and socketFD is a description of that file
-     * 
-     * SOCK_STREAM - TCP connection
-     * AF_INET - internet protocol (IPv4)
-     * 0 - automatically assign a protocol (uses IP layer of Network Layer) 
-    */
-    int socketFD = socket(AF_INET, SOCK_STREAM, 0);
+    // Get socket file descriptor
+    int socketFD = getSocketTCPIPv4();
+    if (socketFD == -1) {
+        printf("Error!\n");
+        return 1;
+    }
     
-    if (socketFD == -1) printf("Error!\n");
-
-    /* sockaddr_in struct used for IPv4
-     * stores address information
-     * inet_pton() converts the ip string into a uint32_t and assign it
-     * htons() converts the number to proper endianness
-    */
+    // Specify address and port
     struct sockaddr_in address;
-    address.sin_port = htons(80);
-    address.sin_family = AF_INET;
-    inet_pton(AF_INET, ip, &address.sin_addr.s_addr);
+    setAddressProperties(&address, 4444, IP_ADDR); 
 
-    // Attempt to connect to a server
+    // Attempt to connect to the server
     int result = connect(socketFD, (const struct sockaddr*)&address, sizeof(address));
     if (result == 0) printf("Connection was succesful!\n");
     else printf("Unsuccesful!\n");
 
+    /* Listen for messages and print (on new thread) */
+    pthread_t recvPrintID;
+    pthread_create(&recvPrintID, NULL, (void *) receivePrintIncomingData, socketFD);
+
+    /* Get input and send */
+    char *line = NULL;
+    size_t line_size = 0;
+    printf("Type your message to send, type \"exit\" to close the application.\n");
+
+    while(1) {
+        ssize_t char_count = getline(&line, &line_size, stdin);
+
+        if (char_count > 0 && strcmp("exit\n", line) == 0) break;
+
+        ssize_t amount_sent = send(socketFD, line, char_count, 0);
+    }
+
+    close(socketFD);
     return 0;
 }
