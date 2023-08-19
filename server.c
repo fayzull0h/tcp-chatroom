@@ -1,73 +1,102 @@
 #include "commonutils.h"
 
-struct AcceptedConnection clients[MAX_CLIENTS];
-int clientCount = 0;
+void * handle_clients(void * arg);
+void broadcast(char * msg, int slen);
 
-int getIncomingConnection(int servSocketFD, struct AcceptedConnection * acceptedSocket) {
-    struct sockaddr_in clientAddress;
-    socklen_t clientAddressSize = sizeof(clientAddress);
-    int clientSocketFD = accept(servSocketFD, (struct sockaddr *)&clientAddress, &clientAddressSize);
+int client_count = 0;
+int client_sockfds[MAX_CLIENTS];
 
-    acceptedSocket->address = clientAddress;
-    acceptedSocket->socketFD = clientSocketFD;
-    return clientSocketFD > 0;
-}
+pthread_mutex_t mutex;
 
-void broadcast(char * msg) {
-    for (int i = 0; i < clientCount; ++i) {
-        if (clients[i].socketFD != -1) {
-            send(clients[i].socketFD, msg, strlen(msg), 0);
-        }
+int main(int argc, char * argv[]) {
+    int serv_sockfd, client_sockfd;
+    struct sockaddr_in serv_addr = {0}, client_addr = {0};
+    int client_addr_size = sizeof(client_addr);
+    pthread_t tid;
+
+    if (argc != 2) {
+        printf("Usage: %s <PORT NUMBER>\n", argv[0]);
+        exit(1);
     }
-}
 
-void receivePrintIncomingData(int socketFD) {
-    char buffer[1024];
+    pthread_mutex_init(&mutex, NULL);
 
-    while(1) {
-        ssize_t amountReceived = recv(socketFD, buffer, 1024, 0);
-
-        if (amountReceived > 0) {
-            buffer[amountReceived] = '\0';
-            printf("Received: %s", buffer);
-
-            broadcast(buffer);
-        } else break;
-    }
-    close(socketFD);
-}
-
-int main() {
     /* Get socket file descriptor */
-    int servSocketFD = getSocketTCPIPv4();
+    serv_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (serv_sockfd < 0) handle_error("[ERROR]: Could not create socket!");
 
     /* Specify address */
-    struct sockaddr_in serverAddress;
-    setAddressProperties(&serverAddress, 4444, "");
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(atoi(argv[1]));
 
     /* Tell OS to bind port 4444 to this program */
-    int result = bind(servSocketFD, (const struct sockaddr*)&serverAddress, sizeof(serverAddress));
-    if (result == 0) printf("Socket bound succesfully!\n");
+    if (bind(serv_sockfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) 
+        handle_error("[ERROR]: Could not bind!");
+    printf("Program binded to port: %s\n", argv[1]);
 
-    /* Start listening for incoming connections 
-    * Queue 10 connection requests before refusing new ones
-    */
-    result = listen(servSocketFD, 10);
+    /**
+     * Start listening for incoming connections 
+     * Queue 10 connection requests before refusing new ones
+     */
+    if (listen(serv_sockfd, 10) != 0)
+        handle_error("[ERROR]: Could not listen!");
+    printf("Listening...\n");
     
-    /* Get new AcceptedConnection
+    /* Get new connections,
     *  receive data and print (in a while loop) on a separate thread
     */
     while (1) {
-        if (clientCount == 10) continue;
+        client_sockfd = accept(serv_sockfd, (struct sockaddr *)&client_addr, &client_addr_size);
+        if (client_sockfd == -1) {
+            printf("An accept() call failed, retrying...\n");
+            continue;
+        }
 
-        struct AcceptedConnection newClient;
-        int acceptResult = getIncomingConnection(servSocketFD, &newClient);
-        clients[clientCount++] = newClient;
+        pthread_mutex_lock(&mutex);
+        client_sockfds[client_count++] = client_sockfd;
+        pthread_mutex_unlock(&mutex);
 
-        pthread_t recvPrintID;
-        pthread_create(&recvPrintID, NULL, (void *) receivePrintIncomingData, newClient.socketFD);
+        pthread_create(&tid, NULL, handle_clients, (void *)&client_sockfd);
+        pthread_detach(tid);
+        printf("Connected client IP: %s\n", inet_ntoa(client_addr.sin_addr));
     }
 
-    shutdown(servSocketFD, SHUT_RDWR);
+    pthread_mutex_destroy(&mutex);
+
+    close(serv_sockfd);
     return 0;
+}
+
+void * handle_clients(void * arg) {
+    int sock = *((int *)arg);
+    int slen = 0;
+    char msg[BUF_SIZE] = {0};
+
+    while ((slen = read(sock, msg, BUF_SIZE)) != 0) {
+        pthread_mutex_lock(&mutex);
+        for (int i = 0; i < client_count; i++) 
+            write(client_sockfds[i], msg, slen);
+        pthread_mutex_unlock(&mutex);
+    }
+
+    pthread_mutex_lock(&mutex);
+    for (int i = 0; i < client_count; i++) {
+        if (client_sockfds[i] == sock) {
+            for (int j = i; j < client_count - 1; j++)
+                client_sockfds[j] = client_sockfds[j+1];
+            break;
+        }
+    }
+    client_count--;
+    pthread_mutex_unlock(&mutex);
+    close(sock);
+    return NULL;
+}
+
+void broadcast(char * msg, int slen) {
+    pthread_mutex_lock(&mutex);
+    for (int i = 0; i < client_count; i++) 
+        write(client_sockfds[i], msg, slen);
+    pthread_mutex_unlock(&mutex);
 }

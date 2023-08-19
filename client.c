@@ -1,52 +1,77 @@
 #include "commonutils.h"
 
-void receivePrintIncomingData(int socketFD) {
-    char buffer[1024];
+#define NAME_SIZE 32
 
-    while(1) {
-        ssize_t amountReceived = recv(socketFD, buffer, 1024, 0);
+void * send_msg(void * arg);
+void * recv_msg(void * arg);
 
-        if (amountReceived > 0) {
-            buffer[amountReceived] = '\0';
-            printf("Received: %s", buffer);
-        } else break;
+char name[NAME_SIZE] = "[DEFAULT]";
+
+int main(int argc, char * argv[]) {
+    int socketFD;
+    struct sockaddr_in serv_addr;
+    pthread_t recv_th, send_th;
+    void * thread_return;
+
+    if (argc != 4) {
+        printf("Usage: %s <IP> <PORT NUMBER> <USERNAME>\n", argv[0]);
+        handle_error("[ERROR]: Improper usage!");
     }
-}
 
-int main() {
-    // Get socket file descriptor
-    int socketFD = getSocketTCPIPv4();
-    if (socketFD == -1) {
-        printf("Error!\n");
-        return 1;
-    }
+    strcpy(name, argv[3]);
+
+    /* Get socket file descriptor */
+    socketFD = socket(AF_INET, SOCK_STREAM, 0);
+    if (socketFD == -1) 
+        handle_error("[ERROR]: Could not create client socket!");
     
-    // Specify address and port
-    struct sockaddr_in address;
-    setAddressProperties(&address, 4444, IP_ADDR); 
+    /* Specify address and port */
+    serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(atoi(argv[2]));
 
-    // Attempt to connect to the server
-    int result = connect(socketFD, (const struct sockaddr*)&address, sizeof(address));
-    if (result == 0) printf("Connection was succesful!\n");
-    else printf("Unsuccesful!\n");
+    /* Attempt to connect to the server */
+    if (connect(socketFD, (const struct sockaddr*)&serv_addr, sizeof(serv_addr)) != 0)
+        handle_error("[ERROR]: Could not connect to the server!");
+    printf("Connected!\n");
 
     /* Listen for messages and print (on new thread) */
-    pthread_t recvPrintID;
-    pthread_create(&recvPrintID, NULL, (void *) receivePrintIncomingData, socketFD);
-
-    /* Get input and send */
-    char *line = NULL;
-    size_t line_size = 0;
-    printf("Type your message to send, type \"exit\" to close the application.\n");
-
-    while(1) {
-        ssize_t char_count = getline(&line, &line_size, stdin);
-
-        if (char_count > 0 && strcmp("exit\n", line) == 0) break;
-
-        ssize_t amount_sent = send(socketFD, line, char_count, 0);
-    }
+    pthread_create(&recv_th, NULL, recv_msg, (void *)&socketFD);
+    pthread_create(&send_th, NULL, send_msg, (void *)&socketFD);
+    pthread_join(recv_th, &thread_return);
+    pthread_join(send_th, &thread_return);
 
     close(socketFD);
     return 0;
+}
+
+void * recv_msg(void * arg) {
+    int sock = *((int *)arg);
+    char name_msg[NAME_SIZE + BUF_SIZE];
+    int slen = 0;
+    while (1) {
+        slen = read(sock, name_msg, NAME_SIZE + BUF_SIZE - 1);
+        if (slen == -1)
+            return (void *)-1;
+        name_msg[slen] = 0;
+        printf(name_msg);
+    }
+    return NULL;
+}
+
+void * send_msg(void * arg) {
+    int sock = *((int *)arg);
+    char msg[BUF_SIZE] = {0};
+    char name_msg[NAME_SIZE + BUF_SIZE] = {0};
+
+    while (1) {
+        fgets(msg, BUF_SIZE, stdin);
+        if (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n")) {
+            close(sock);
+            exit(0);
+        }
+        sprintf(name_msg, "[%s]: %s", name, msg);
+        write(sock, name_msg, strlen(name_msg));
+    }
+    return NULL;
 }

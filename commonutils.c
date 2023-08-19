@@ -1,5 +1,14 @@
 #include "commonutils.h"
 
+/**
+ * Simple error handling function
+ * @param msg is the error message to output
+*/
+void handle_error(char * msg) {
+    puts(msg);
+    exit(1);
+}
+
 /* Makes a socket file descriptor
 * - a socket is basically a file in your computer
 * - and socketFD is a description of that file

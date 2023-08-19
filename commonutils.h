@@ -5,9 +5,13 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdlib.h>
 
 #define IP_ADDR "10.0.0.205"
 #define MAX_CLIENTS 10
+#define BUF_SIZE 1024
+
+void handle_error(char * msg);
 
 int getSocketTCPIPv4();
 
