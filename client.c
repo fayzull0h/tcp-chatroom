@@ -5,10 +5,16 @@
 
 #define WINPUT_HEIGHT 6
 
+struct thread_arg {
+    WINDOW * win;
+    int sock;
+};
+
 void * send_msg(void * arg);
 void * recv_msg(void * arg);
 
-char name[NAME_SIZE] = "[DEFAULT]";
+char name[NAME_SIZE] = "DEFAULT";
+pthread_mutex_t mutex;
 
 int main(int argc, char * argv[]) {
     /* Check input */
@@ -23,6 +29,7 @@ int main(int argc, char * argv[]) {
     struct sockaddr_in serv_addr;
     pthread_t recv_th, send_th;
     void * thread_return;
+    pthread_mutex_init(&mutex, NULL);
 
     /* Get socket file descriptor */
     socketFD = socket(AF_INET, SOCK_STREAM, 0);
@@ -51,20 +58,52 @@ int main(int argc, char * argv[]) {
     
     wmove(stdscr, scrheight-WINPUT_HEIGHT-2, 3);
     printw("Enter message:");
-
     refresh();
-    wrefresh(msgs_win);
-    wmove(input_win, 1, 1);
-    wrefresh(input_win);
-    getch();
 
-    /* Listen for messages and print (on new thread) 
+    wrefresh(msgs_win);
+    wrefresh(input_win);
+    wmove(input_win, 1, 1);
+    refresh();
+
+    char c;
+    int x, y;
+    int slen = 0;
+    char mmm[BUF_SIZE] = {0};
+    
+    while (c = wgetch(input_win)) {
+        if (c == '\n') 
+            break;
+        mmm[slen++] = c;
+        getyx(input_win, y, x);
+        wmove(input_win, y+1, x-1);
+        waddch(input_win, c);
+        wmove(input_win, y, x);
+
+        if (slen == scrwidth-6) {
+            int fx, fy;
+            getyx(input_win, fy, fx);
+            wmove(input_win, fy+1, 1);
+        }
+    }
+
+    wmove(msgs_win, 1, 1);
+    wprintw(msgs_win, "%s", mmm);
+    refresh();
+    wgetch(msgs_win);
+
+    /* Create variables to send to threads */
+    struct thread_arg send_th_arg = {0};
+    send_th_arg.win = input_win;
+    send_th_arg.sock = socketFD;
+
+    /* Create threads for receiving and sending messages 
     pthread_create(&recv_th, NULL, recv_msg, (void *)&socketFD);
-    pthread_create(&send_th, NULL, send_msg, (void *)&socketFD);
-    pthread_join(recv_th, &thread_return);
+    pthread_create(&send_th, NULL, send_msg, (void *)&send_th_arg);
+    //pthread_join(recv_th, &thread_return);
     pthread_join(send_th, &thread_return);*/
 
     close(socketFD);
+    pthread_mutex_destroy(&mutex);
 
     endwin();
     return 0;
@@ -85,18 +124,19 @@ void * recv_msg(void * arg) {
 }
 
 void * send_msg(void * arg) {
-    int sock = *((int *)arg);
+    struct thread_arg args = *((struct thread_arg *)arg);
     char msg[BUF_SIZE] = {0};
     char name_msg[NAME_SIZE + BUF_SIZE] = {0};
+    int slen = 0;
 
     while (1) {
-        fgets(msg, BUF_SIZE, stdin);
+        msg[slen++] = wgetch(args.win);
         if (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n")) {
-            close(sock);
+            close(args.sock);
             exit(0);
         }
         sprintf(name_msg, "[%s]: %s", name, msg);
-        write(sock, name_msg, strlen(name_msg));
+        write(args.sock, name_msg, strlen(name_msg));
     }
     return NULL;
 }
