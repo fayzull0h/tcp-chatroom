@@ -6,7 +6,8 @@
 #define WINPUT_HEIGHT 6
 
 struct thread_arg {
-    WINDOW * win;
+    WINDOW * input_win;
+    WINDOW * msgs_win;
     int sock;
 };
 
@@ -102,14 +103,12 @@ int main(int argc, char * argv[]) {
     wgetch(msgs_win);
 */
     /* Create variables to send to threads */
-    struct thread_arg send_th_arg = {0};
-    send_th_arg.win = input_win;
-    send_th_arg.sock = socketFD;
+    struct thread_arg args = {.input_win = input_win, .msgs_win = msgs_win, .sock = socketFD};
 
-    /* Create threads for receiving and sending messages 
-    pthread_create(&recv_th, NULL, recv_msg, (void *)&socketFD);*/
-    pthread_create(&send_th, NULL, send_msg, (void *)&send_th_arg);
-    //pthread_join(recv_th, &thread_return);
+    /* Create threads for receiving and sending messages */
+    pthread_create(&recv_th, NULL, recv_msg, (void *)&args);
+    pthread_create(&send_th, NULL, send_msg, (void *)&args);
+    pthread_join(recv_th, &thread_return);
     pthread_join(send_th, &thread_return);
 
     close(socketFD);
@@ -121,15 +120,21 @@ int main(int argc, char * argv[]) {
 
 void * recv_msg(void * arg) {
     struct thread_arg args = *((struct thread_arg *)arg);
-    char name_msg[NAME_SIZE + BUF_SIZE];
+    char name_msg[NAME_SIZE + BUF_SIZE] = {0};
     int slen = 0;
     int y = 1, x = 1;
-    while (1) {
-        slen = read(args.sock, name_msg, NAME_SIZE + BUF_SIZE - 1);
-        if (slen == -1)
+    sleep(2);
+    while ((slen = read(args.sock, name_msg, NAME_SIZE + BUF_SIZE - 1)) != 0) {
+        pthread_mutex_lock(&mutex);
+        if (slen == -1) {
             return (void *)-1;
+            pthread_mutex_unlock(&mutex);
+        }
         name_msg[slen] = 0;
-        mvwprintw(args.win, y++, 1, name_msg);
+        mvwprintw(args.msgs_win, y++, 1, name_msg);
+        wrefresh(args.msgs_win);
+        wrefresh(args.input_win);
+        pthread_mutex_unlock(&mutex);
     }
     return NULL;
 }
@@ -138,20 +143,25 @@ void * send_msg(void * arg) {
     struct thread_arg args = *((struct thread_arg *)arg);
     char msg[BUF_SIZE] = {0};
     char name_msg[NAME_SIZE + BUF_SIZE] = {0};
-    int slen = 0;
+    int slen;
 
     while (1) {
-        msg[slen] = wgetch(args.win);
-        slen++;
-        if (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n")) {
-            close(args.sock);
-            exit(0);
-        }
+        msg[slen++] = wgetch(args.input_win);
         if (msg[slen-1] == '\n') {
+            pthread_mutex_lock(&mutex);
+            msg[slen] = 0;
+            if (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n")) {
+                pthread_mutex_unlock(&mutex);
+                return NULL;
+            }
             sprintf(name_msg, "[%s]: %s", name, msg);
             write(args.sock, name_msg, strlen(name_msg));
-            wclear(args.win);
-            wmove(args.win, 1, 1);
+            wclear(args.input_win);
+            box(args.input_win, 0, 0);
+            wrefresh(args.input_win);
+            pthread_mutex_unlock(&mutex);
+            wmove(args.input_win, 1, 1);
+            slen = 0;
         }
     }
     return NULL;
