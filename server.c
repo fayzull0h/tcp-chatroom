@@ -74,9 +74,11 @@ void * handle_clients(void * arg) {
     char msg[BUF_SIZE];
 
     while ((slen = read(sock, msg, BUF_SIZE)) != 0) {
+        msg[slen] = 0;
         pthread_mutex_lock(&mutex);
-        for (int i = 0; i < client_count; i++) 
+        for (int i = 0; i < client_count; ++i) {
             write(client_sockfds[i], msg, slen);
+        }
         pthread_mutex_unlock(&mutex);
     }
 
