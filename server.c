@@ -30,7 +30,7 @@ int main(int argc, char * argv[]) {
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(atoi(argv[1]));
 
-    /* Tell OS to bind port 4444 to this program */
+    /* Tell OS to bind port to this program */
     if (bind(serv_sockfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) 
         handle_error("[ERROR]: Could not bind!");
     printf("Program binded to port: %s\n", argv[1]);
@@ -70,14 +70,19 @@ int main(int argc, char * argv[]) {
 
 void * handle_clients(void * arg) {
     int sock = *((int *)arg);
-    int slen = 0;
-    char msg[BUF_SIZE] = {0};
+    int slen;
+    char msg[BUF_SIZE];
 
-    while ((slen = read(sock, msg, BUF_SIZE)) != 0) {
-        pthread_mutex_lock(&mutex);
+    while (1) {
+        slen = 0;
+        slen = recv(sock, msg, BUF_SIZE, 0);
+        msg[slen] = 0;
+        printf("%s", msg);
+        if (slen <= 0) break;
+        /*pthread_mutex_lock(&mutex);
         for (int i = 0; i < client_count; i++) 
             write(client_sockfds[i], msg, slen);
-        pthread_mutex_unlock(&mutex);
+        pthread_mutex_unlock(&mutex);*/
     }
 
     pthread_mutex_lock(&mutex);
