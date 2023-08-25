@@ -43,19 +43,22 @@ int main(int argc, char * argv[]) {
     serv_addr.sin_port = htons(atoi(argv[2]));
 
     /* Attempt to connect to the server */
-    if (connect(socketFD, (const struct sockaddr*)&serv_addr, sizeof(serv_addr)) != 0) printf("hi");
-        //handle_error("[ERROR]: Could not connect to the server!");
+    if (connect(socketFD, (const struct sockaddr*)&serv_addr, sizeof(serv_addr)) != 0)
+        handle_error("[ERROR]: Could not connect to the server!");
     printf("Connected!\n");
 
     /* NCURSES START */
     int scrwidth, scrheight;
     initscr();
     getmaxyx(stdscr, scrheight, scrwidth);
+    cbreak();
+    noecho();
 
     WINDOW * input_win = newwin(WINPUT_HEIGHT, scrwidth-4, scrheight-WINPUT_HEIGHT-1, 2);
     WINDOW * msgs_win = newwin(scrheight-WINPUT_HEIGHT-3, scrwidth-4, 1, 2);
     box(input_win, 0, 0);
     box(msgs_win, 0, 0);
+    keypad(input_win, TRUE);
     
     wmove(stdscr, scrheight-WINPUT_HEIGHT-2, 3);
     printw("Enter message:");
@@ -130,7 +133,7 @@ void * recv_msg(void * arg) {
             return (void *)-1;
             pthread_mutex_unlock(&mutex);
         }
-        name_msg[slen] = 0;
+        name_msg[slen] = '\0';
         mvwprintw(args.msgs_win, y++, 1, name_msg);
         wrefresh(args.msgs_win);
         wrefresh(args.input_win);
@@ -143,11 +146,14 @@ void * send_msg(void * arg) {
     struct thread_arg args = *((struct thread_arg *)arg);
     char msg[BUF_SIZE] = {0};
     char name_msg[NAME_SIZE + BUF_SIZE] = {0};
-    int slen;
+    keypad(args.input_win, 1);
+    char c;
+    int slen = 0;
+    int y, x;
 
-    while (1) {
-        msg[slen++] = wgetch(args.input_win);
-        if (msg[slen-1] == '\n') {
+    while (c = wgetch(args.input_win)) {
+        if (c == '\n') {
+            msg[slen++] = c;
             pthread_mutex_lock(&mutex);
             msg[slen] = 0;
             if (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n")) {
@@ -162,6 +168,16 @@ void * send_msg(void * arg) {
             pthread_mutex_unlock(&mutex);
             wmove(args.input_win, 1, 1);
             slen = 0;
+        } else if (c == 7) {
+            if (slen == 0) continue;
+            getyx(args.input_win, y, x);
+            mvwaddch(args.input_win, y, x-1, ' ');
+            wmove(args.input_win, y, x-1);
+            wrefresh(args.input_win);
+            msg[--slen] = 0;
+        } else {
+            waddch(args.input_win, c);
+            msg[slen++] = c;
         }
     }
     return NULL;
