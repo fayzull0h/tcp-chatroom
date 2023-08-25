@@ -69,50 +69,14 @@ int main(int argc, char * argv[]) {
     wmove(input_win, 1, 1);
     refresh();
 
-/*
-    char c;
-    int x = 1, y = 1;
-    int slen = 0;
-    char mmm[BUF_SIZE] = {0};
-    
-    while (c = wgetch(input_win)) {
-        if (c == '\n') {
-            mmm[slen] = '\0';
-            write(socketFD, mmm, strlen(mmm));
-            wclear(input_win);
-            mvwprintw(input_win, 0, 0, "sent: %d chars", slen);
-            wmove(input_win, 1, 1);
-            slen = 0;
-            memset(mmm, 0, BUF_SIZE);
-            y = x = 1;
-            continue;
-        }
-        mmm[slen++] = c;
-        mvwaddch(msgs_win, y, x++, c);
-        wrefresh(msgs_win);
-        wrefresh(input_win);
-        if (y == scrwidth-6) y = 1;
-
-        if (slen == scrwidth-6) {
-            int fx, fy;
-            getyx(input_win, fy, fx);
-            wmove(input_win, fy+1, 1);
-        }
-    }
-
-    wmove(msgs_win, 1, 1);
-    wprintw(msgs_win, "%s", mmm);
-    refresh();
-    wgetch(msgs_win);
-*/
     /* Create variables to send to threads */
     struct thread_arg args = {.input_win = input_win, .msgs_win = msgs_win, .sock = socketFD};
 
     /* Create threads for receiving and sending messages */
     pthread_create(&recv_th, NULL, recv_msg, (void *)&args);
     pthread_create(&send_th, NULL, send_msg, (void *)&args);
-    pthread_join(recv_th, &thread_return);
     pthread_join(send_th, &thread_return);
+    pthread_cancel(recv_th);
 
     close(socketFD);
     pthread_mutex_destroy(&mutex);
