@@ -9,6 +9,7 @@ struct thread_arg {
     WINDOW * input_win;
     WINDOW * msgs_win;
     int sock;
+    int scr_width;
 };
 
 void * send_msg(void * arg);
@@ -45,7 +46,6 @@ int main(int argc, char * argv[]) {
     /* Attempt to connect to the server */
     if (connect(socketFD, (const struct sockaddr*)&serv_addr, sizeof(serv_addr)) != 0)
         handle_error("[ERROR]: Could not connect to the server!");
-    printf("Connected!\n");
 
     /* NCURSES START */
     int scrwidth, scrheight;
@@ -70,7 +70,8 @@ int main(int argc, char * argv[]) {
     refresh();
 
     /* Create variables to send to threads */
-    struct thread_arg args = {.input_win = input_win, .msgs_win = msgs_win, .sock = socketFD};
+    struct thread_arg args = {.input_win = input_win, .msgs_win = msgs_win, 
+                              .sock = socketFD, .scr_width = scrwidth};
 
     /* Create threads for receiving and sending messages */
     pthread_create(&recv_th, NULL, recv_msg, (void *)&args);
@@ -98,7 +99,16 @@ void * recv_msg(void * arg) {
             pthread_mutex_unlock(&mutex);
         }
         name_msg[slen] = '\0';
-        mvwprintw(args.msgs_win, y++, 1, name_msg);
+        wmove(args.msgs_win, y, x);
+        for (int i = 0; i < slen; ++i) {
+            waddch(args.msgs_win, name_msg[i]);
+            if (++x == args.scr_width - 5) {
+                x = 1;
+                wmove(args.msgs_win, ++y, x);
+            }
+        }
+        ++y, x = 1;
+        box(args.msgs_win, 0, 0);
         wrefresh(args.msgs_win);
         wrefresh(args.input_win);
         pthread_mutex_unlock(&mutex);
@@ -113,7 +123,7 @@ void * send_msg(void * arg) {
     keypad(args.input_win, 1);
     char c;
     int slen = 0;
-    int y, x;
+    int y = 1, x = 1;
 
     while (c = wgetch(args.input_win)) {
         if (c == '\n') {
@@ -130,7 +140,8 @@ void * send_msg(void * arg) {
             box(args.input_win, 0, 0);
             wrefresh(args.input_win);
             pthread_mutex_unlock(&mutex);
-            wmove(args.input_win, 1, 1);
+            y = 1, x = 1;
+            wmove(args.input_win, y, x);
             slen = 0;
         } else if (c == 7) {
             if (slen == 0) continue;
@@ -140,8 +151,13 @@ void * send_msg(void * arg) {
             wrefresh(args.input_win);
             msg[--slen] = 0;
         } else {
+            if (x == args.scr_width - 5) {
+                x = 1;
+                wmove(args.input_win, ++y, x);
+            }
             waddch(args.input_win, c);
             msg[slen++] = c;
+            ++x;
         }
     }
     return NULL;
