@@ -1,8 +1,6 @@
 #include "commonutils.h"
 #include <ncurses.h>
 
-#define NAME_SIZE 32
-
 #define WINPUT_HEIGHT 6
 
 struct thread_arg {
@@ -46,6 +44,7 @@ int main(int argc, char * argv[]) {
     /* Attempt to connect to the server */
     if (connect(socketFD, (const struct sockaddr*)&serv_addr, sizeof(serv_addr)) != 0)
         handle_error("[ERROR]: Could not connect to the server!");
+    write(socketFD, name, strlen(name));
 
     /* NCURSES START */
     int scrwidth, scrheight;

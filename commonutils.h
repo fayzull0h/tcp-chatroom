@@ -12,6 +12,7 @@
 #define MAX_CLIENTS 10
 #define BUF_SIZE 1024
 #define MINUTE 60
+#define NAME_SIZE 32
 
 void handle_error(char * msg);
 

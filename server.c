@@ -8,6 +8,7 @@
 struct clients_th_arg {
     pthread_t tid;
     int client_sockfd;
+    char name[NAME_SIZE];
 };
 
 void * handle_clients(void * arg);
@@ -63,6 +64,8 @@ int main(int argc, char * argv[]) {
     *  receive data and print (in a while loop) on a separate thread
     */
     while (1) {
+        char name[NAME_SIZE];
+        char connection_msg[NAME_SIZE + 32];
         client_sockfd = accept(serv_sockfd, (struct sockaddr *)&client_addr, &client_addr_size);
         if (client_sockfd == -1) {
             printf("An accept() call failed, retrying...\n");
@@ -73,11 +76,18 @@ int main(int argc, char * argv[]) {
         client_sockfds[client_count++] = client_sockfd;
         pthread_mutex_unlock(&mutex);
 
+        int name_len = read(client_sockfd, name, NAME_SIZE);
+        name[name_len] = 0;
+        sprintf(connection_msg, "*** [%s] has connected... ***\n", name);
+        for (int i = 0; i < client_count; ++i)
+            write(client_sockfds[i], connection_msg, strlen(connection_msg));
+
         struct clients_th_arg arg = {.client_sockfd = client_sockfd, .tid = active_th};
+        strcpy(arg.name, name);
 
         pthread_create(tid + client_count, NULL, handle_clients, (void *)&arg);
         pthread_detach(tid[client_count]);
-        printf("Connected client IP: %s\n", inet_ntoa(client_addr.sin_addr));
+        printf("Connected client: %s, %s\n", name, inet_ntoa(client_addr.sin_addr));
     }
     return 0;
 }
@@ -92,13 +102,15 @@ void * handle_clients(void * arg) {
     while ((slen = read(sock, msg, BUF_SIZE)) != 0) {
         msg[slen] = 0;
         pthread_mutex_lock(&mutex);
-        for (int i = 0; i < client_count; ++i) {
+
+        for (int i = 0; i < client_count; ++i) 
             write(client_sockfds[i], msg, slen);
-        }
+        
         pthread_mutex_unlock(&mutex);
     }
 
     pthread_mutex_lock(&mutex);
+    sprintf(msg, "*** [%s] has disconnected... ***\n", args.name);
     for (int i = 0; i < client_count; i++) {
         if (client_sockfds[i] == sock) {
             for (int j = i; j < client_count - 1; j++)
@@ -107,9 +119,14 @@ void * handle_clients(void * arg) {
         }
     }
     client_count--;
+
+    for (int i = 0; i < client_count; ++i) 
+        write(client_sockfds[i], msg, strlen(msg));
+
     pthread_mutex_unlock(&mutex);
     check_active(tid);
     close(sock);
+    printf("Client disconnected: %s\n", args.name);
     return NULL;
 }
 
